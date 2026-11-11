@@ -14,7 +14,14 @@
     "margin_tilt": 160,
     "speed_pan": 430,
     "speed_tilt": 430,
-    "pos_0": "3925,900"
+    "presets": [
+      {
+        "id": 0,
+        "description": "Home",
+        "x": 3925,
+        "y": 900
+      }
+    ]
   },
   "gpio": {
     "enable_ircut": false,

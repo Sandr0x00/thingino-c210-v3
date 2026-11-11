@@ -2,8 +2,8 @@
 # PTZ presets for the lean WebUI.
 #
 # Deliberately a thin wrapper around /sbin/ptz_presets, which is the SAME store
-# ONVIF uses (/etc/ptz_presets.conf, wired up in onvif.json as set/get/move/
-# remove_preset). So a preset saved here appears in iSpy and IP Cam Viewer, and
+# ONVIF uses (the motors.presets array in /etc/thingino.json, wired up in
+# onvif.json as set/get/move/remove_preset). So a preset saved here appears in iSpy and IP Cam Viewer, and
 # theirs appear here. Do not keep a WebUI-private list.
 #
 #   GET ?a=list                     -> {"presets":[{"n":0,"name":"Door","x":..,"y":..}]}
@@ -11,9 +11,8 @@
 #   GET ?a=save&n=<num|-1>&name=..  -> store CURRENT position (-1 = first free slot)
 #   GET ?a=del&n=<num>              -> clear slot
 #
-# ptz_presets interpolates the name straight into `sed s/^N=.*/N=NAME,x,y/`, so
-# a name containing / or & would corrupt the config or inject a sed command.
-# It is sanitised here, hard, before it ever reaches that script.
+# Names are still restricted to a conservative character set here, before they
+# reach /sbin/ptz_presets (defence in depth; it also keeps the JSON below valid).
 
 . /var/www/x/auth.sh
 require_auth
@@ -62,10 +61,14 @@ list() {
 	json_header
 	printf '{"ok":true,"presets":['
 	first=1
-	# ptz_presets -g emits "NUM=NAME,X,Y"; empty slots are "NUM=,,"
-	$PRESETS -g 2>/dev/null | while IFS='=,' read -r pnum pname px py; do
+	# ptz_presets -g emits "ID,X,Y,DESCRIPTION" (one per line). The description
+	# comes last because it may itself contain commas; read puts the remainder
+	# in the final variable. ONVIF clients can set arbitrary names, so escape
+	# them for JSON here.
+	$PRESETS -g 2>/dev/null | while IFS=, read -r pnum px py pname; do
 		[ -n "$pnum" ] || continue
 		[ -n "$px" ] && [ -n "$py" ] || continue
+		pname=$(printf '%s' "$pname" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr -d '\000-\037')
 		[ "$first" = 1 ] || printf ','
 		first=0
 		printf '{"n":%s,"name":"%s","x":%s,"y":%s}' "$pnum" "$pname" "$px" "$py"

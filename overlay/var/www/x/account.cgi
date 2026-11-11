@@ -180,6 +180,16 @@ set_web_pw() {
 	ok ',"changed":"web"'
 }
 
+# True when onvif.json's "server" object carries its own username line. The stock file
+# does not: the ONVIF service takes its credentials from the streamer's (raptor) config,
+# which is set further down. Only rewrite onvif.json when it really holds a copy.
+onvif_json_has_creds() {
+	awk '/^[ \t]*"server"[ \t]*:[ \t]*\{/ { ins=1 }
+	     ins && /^[ \t]*"username"[ \t]*:/ { found=1 }
+	     ins && /^[ \t]*\}/ { ins=0 }
+	     END { exit !found }' "$ONVIF_JSON" 2>/dev/null
+}
+
 # --- change the ONVIF credentials -----------------------------------------
 set_onvif() {
 	local user pass tmp
@@ -189,35 +199,37 @@ set_onvif() {
 	valid_onvif_field "$pass" || fail "onvif password: 1-32 printable chars, no space/quote/backslash"
 	[ -f "$ONVIF_JSON" ] || fail "onvif config missing" "500 Internal Server Error"
 
-	tmp=$(mktemp 2>/dev/null || echo /tmp/onvif.$$)
-	# Reprint only the username/password lines inside the "server" object,
-	# preserving each line's original trailing punctuation (comma or not) so the
-	# JSON stays valid regardless of field order. Values come via ENVIRON so no
-	# escape processing touches them; they're already proven quote/backslash-free.
-	NU="$user" NP="$pass" awk '
-		BEGIN{ ins=0 }
-		/^[ \t]*"server"[ \t]*:[ \t]*\{/ { ins=1 }
-		{
-			if (ins && $0 ~ /^[ \t]*"username"[ \t]*:/) {
-				tail=""; if ($0 ~ /,[ \t]*$/) tail=",";
-				match($0, /^[ \t]*/); ind=substr($0,1,RLENGTH);
-				print ind "\"username\": \"" ENVIRON["NU"] "\"" tail; next
+	if onvif_json_has_creds; then
+		tmp=$(mktemp 2>/dev/null || echo /tmp/onvif.$$)
+		# Reprint only the username/password lines inside the "server" object,
+		# preserving each line's original trailing punctuation (comma or not) so the
+		# JSON stays valid regardless of field order. Values come via ENVIRON so no
+		# escape processing touches them; they're already proven quote/backslash-free.
+		NU="$user" NP="$pass" awk '
+			BEGIN{ ins=0 }
+			/^[ \t]*"server"[ \t]*:[ \t]*\{/ { ins=1 }
+			{
+				if (ins && $0 ~ /^[ \t]*"username"[ \t]*:/) {
+					tail=""; if ($0 ~ /,[ \t]*$/) tail=",";
+					match($0, /^[ \t]*/); ind=substr($0,1,RLENGTH);
+					print ind "\"username\": \"" ENVIRON["NU"] "\"" tail; next
+				}
+				if (ins && $0 ~ /^[ \t]*"password"[ \t]*:/) {
+					tail=""; if ($0 ~ /,[ \t]*$/) tail=",";
+					match($0, /^[ \t]*/); ind=substr($0,1,RLENGTH);
+					print ind "\"password\": \"" ENVIRON["NP"] "\"" tail; next
+				}
+				if (ins && $0 ~ /^[ \t]*\}/) ins=0
+				print
 			}
-			if (ins && $0 ~ /^[ \t]*"password"[ \t]*:/) {
-				tail=""; if ($0 ~ /,[ \t]*$/) tail=",";
-				match($0, /^[ \t]*/); ind=substr($0,1,RLENGTH);
-				print ind "\"password\": \"" ENVIRON["NP"] "\"" tail; next
-			}
-			if (ins && $0 ~ /^[ \t]*\}/) ins=0
-			print
-		}
-	' "$ONVIF_JSON" > "$tmp" 2>/dev/null || { rm -f "$tmp"; fail "could not edit onvif.json" "500 Internal Server Error"; }
+		' "$ONVIF_JSON" > "$tmp" 2>/dev/null || { rm -f "$tmp"; fail "could not edit onvif.json" "500 Internal Server Error"; }
 
-	# Sanity: the new username must now be present, and the file must still end
-	# with a closing brace (cheap guard against a mangled rewrite).
-	grep -q "\"username\": \"$user\"" "$tmp" || { rm -f "$tmp"; fail "onvif rewrite failed" "500 Internal Server Error"; }
-	cat "$tmp" > "$ONVIF_JSON" || { rm -f "$tmp"; fail "onvif write failed" "500 Internal Server Error"; }
-	rm -f "$tmp"
+		# Sanity: the new username must now be present, and the file must still end
+		# with a closing brace (cheap guard against a mangled rewrite).
+		grep -q "\"username\": \"$user\"" "$tmp" || { rm -f "$tmp"; fail "onvif rewrite failed" "500 Internal Server Error"; }
+		cat "$tmp" > "$ONVIF_JSON" || { rm -f "$tmp"; fail "onvif write failed" "500 Internal Server Error"; }
+		rm -f "$tmp"
+	fi
 
 	# The ONVIF service (onvif.cgi) re-reads the file per request — already live.
 	# Bounce the notify daemon so event subscriptions use the new creds too.
@@ -228,8 +240,11 @@ set_onvif() {
 	# from raptor.conf at start, so persist then restart rsd/rhd. Neither serves
 	# the WebUI's WebRTC view, so the live page is unaffected; RTSP/snapshot
 	# clients just reconnect with the new credential.
-	raptorctl config set rtsp username "$user" >/dev/null 2>&1
-	raptorctl config set rtsp password "$pass" >/dev/null 2>&1
+	if command -v raptorctl >/dev/null 2>&1; then
+		raptorctl config set rtsp username "$user" >/dev/null 2>&1 &&
+		raptorctl config set rtsp password "$pass" >/dev/null 2>&1 ||
+			fail "could not set the RTSP/ONVIF credentials" "500 Internal Server Error"
+	fi
 	raptorctl config set http username "$user" >/dev/null 2>&1
 	raptorctl config set http password "$pass" >/dev/null 2>&1
 	raptorctl config save >/dev/null 2>&1

@@ -53,9 +53,22 @@ if [ ! -d "$THINGINO_DIR/.git" ]; then
   git clone "$UPSTREAM_URL" "$THINGINO_DIR"
 fi
 if [ "${NO_PIN:-0}" != "1" ]; then
+  # apply-layer.sh overwrites tracked upstream files in place and drops new
+  # files into overlay/, package/ and scripts/, so the tree is always "dirty"
+  # after a build and git refuses to switch commits. Everything in those paths
+  # is layer-owned and re-applied below, so revert tracked edits and remove
+  # untracked leftovers first -- which also drops files this repo has since
+  # deleted (obsolete patches, retired overlay files) instead of letting them
+  # linger in the tree. Ignored files (dl/, output/, user/) are not touched.
+  echo "== resetting layer-owned paths in $THINGINO_DIR"
+  git -C "$THINGINO_DIR" checkout -q -- configs overlay package scripts
+  git -C "$THINGINO_DIR" clean -fdq -- overlay package scripts
   echo "== checking out pin $PIN"
   git -C "$THINGINO_DIR" fetch --all --tags --quiet || true
   git -C "$THINGINO_DIR" checkout --quiet "$PIN"
+  # upstream occasionally changes the buildroot submodule's URL/commit
+  git -C "$THINGINO_DIR" submodule sync --quiet
+  git -C "$THINGINO_DIR" submodule update --init --quiet
 fi
 
 # 2. apply our layer --------------------------------------------------------

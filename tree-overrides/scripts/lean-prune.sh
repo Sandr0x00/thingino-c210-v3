@@ -86,7 +86,7 @@ KEEP_ROOT="index.html login.html"
 # eval() QUERY_STRING. Our own motors.cgi replaces json-motor.cgi.
 KEEP_X="auth.sh session.sh login.cgi logout.cgi session-status.cgi
         ch0.jpg ch1.jpg snapshot.sh legacy-url-recovery.cgi reboot.cgi
-        mjpeg.cgi motion.cgi motors.cgi ota.cgi presets.cgi ptz.cgi video.cgi
+        mjpeg.cgi motion.cgi motors.cgi ota.cgi presets.cgi ptz.cgi video.cgi daynight.cgi
         webrtc-whip.cgi sd.cgi clips.cgi account.cgi osd.cgi device.cgi net.cgi"
 
 keeps_root=" $(echo $KEEP_ROOT) "

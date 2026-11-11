@@ -47,9 +47,23 @@ if [ -f "$DEFCFG" ]; then
   echo "== board defconfig RMEM: $(grep '^BR2_THINGINO_RMEM_MB=' "$DEFCFG")"
 fi
 
+# 5. sysctl: append our IPv6-off block to upstream's file instead of shipping a
+# whole-file copy (which silently dropped upstream's later additions, e.g.
+# wmem_max and the dirty-writeback limits). Idempotent.
+SYSCTL="$THINGINO_DIR/overlay/etc/sysctl.conf"
+if [ -f "$SYSCTL" ] && ! grep -q 'net.ipv6.conf.all.disable_ipv6' "$SYSCTL"; then
+  cat >> "$SYSCTL" <<'EOF2'
+
+# Disable IPv6 so WebRTC (rwd) advertises the IPv4 ICE host candidate
+net.ipv6.conf.all.disable_ipv6 = 1
+net.ipv6.conf.default.disable_ipv6 = 1
+net.ipv6.conf.lo.disable_ipv6 = 1
+EOF2
+  echo "== sysctl: appended IPv6-off block"
+fi
+
 # ensure our init scripts + helper daemons are executable in the tree
 chmod 0755 "$THINGINO_DIR/overlay/etc/init.d/S09hardening" \
-           "$THINGINO_DIR/overlay/etc/init.d/S59motor" \
            "$THINGINO_DIR/overlay/etc/init.d/S97daynight" \
            "$THINGINO_DIR/overlay/etc/init.d/S61ptz-glide" \
            "$THINGINO_DIR/overlay/usr/sbin/daynight" \

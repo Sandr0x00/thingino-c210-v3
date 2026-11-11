@@ -1,0 +1,30 @@
+From: Tapo-C210 lean firmware
+Subject: [PATCH] motor: default invert_y=1 (C210 tilt is inverted)
+
+Upstream S59motor no longer passes invert_x/invert_y to the SPI module
+(the daemon applies inversion from thingino.json), so the C210 needs the
+module itself to default to the inverted tilt it was calibrated with.
+
+--- a/motor.c
++++ b/motor.c
+@@ -100,7 +100,10 @@
+ static int center_x_override = -1;
+ static int center_y_override = -1;
+ static int invert_x = 0;
+-static int invert_y = 0;
++/* Tapo C210: tilt is wired inverted. Default it on in the module so it no
++ * longer depends on S59motor passing invert_y (upstream stopped doing so;
++ * the daemon handles inversion from thingino.json, which stays false here). */
++static int invert_y = 1;
+ static int move_timeout_ms = 15000;
+ module_param(hmaxstep, int, 0644);
+ MODULE_PARM_DESC(hmaxstep, "Maximum horizontal (X-axis) steps");
+@@ -123,7 +126,7 @@
+ module_param(invert_x, int, 0644);
+ MODULE_PARM_DESC(invert_x, "Invert X-axis direction (1=inverted, 0=normal, default 0)");
+ module_param(invert_y, int, 0644);
+-MODULE_PARM_DESC(invert_y, "Invert Y-axis direction (1=inverted, 0=normal, default 0)");
++MODULE_PARM_DESC(invert_y, "Invert Y-axis direction (1=inverted, 0=normal, default 1 on this build)");
+ module_param(move_timeout_ms, int, 0644);
+ MODULE_PARM_DESC(move_timeout_ms,
+ 	       "Maximum milliseconds a move may run before the driver forces a stop (0 disables)");
